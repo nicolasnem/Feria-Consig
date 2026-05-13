@@ -522,9 +522,14 @@ function renderOwnersTable() {
   const tbody = document.getElementById('ownersTable');
   tbody.innerHTML = '';
   allOwners.forEach(o => {
+    // FIX: Contar solo prendas que no están devueltas
     const garmentCount = allGarments.filter(g => 
       String(g.owner_id) === String(o.id) && g.status !== 'devuelta'
     ).length;
+
+    // Debug: mostrar en consola para verificar
+    console.log(`Dueño ${o.name}: ${garmentCount} prendas (filtradas de ${allGarments.filter(g => String(g.owner_id) === String(o.id)).length} total)`);
+
     const balance = Number(o.balance || 0).toFixed(2);
     tbody.innerHTML += `
       <tr>
@@ -650,9 +655,18 @@ async function returnGarment(id) {
     user_id: currentUser?.id
   }]);
 
+  // FIX: Actualizar la prenda localmente inmediatamente para reflejar el cambio
+  // sin esperar a que Supabase devuelva datos frescos (evita stale data)
+  garment.status = 'devuelta';
+
   showToast('Prenda devuelta correctamente', 'success');
+
+  // Recargar datos y renderizar
   await loadGarments();
   await loadOwners();
+
+  // Forzar re-render de la tabla de dueños con datos actualizados
+  renderOwnersTable();
 }
 
 async function deleteGarment(id) {
