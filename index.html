@@ -525,11 +525,14 @@ function renderOwnerSelect() {
   });
 }
 
+// FIX: Conteo de prendas excluye las devueltas
 function renderOwnersTable() {
   const tbody = document.getElementById('ownersTable');
   tbody.innerHTML = '';
   allOwners.forEach(o => {
-    const garmentCount = allGarments.filter(g => String(g.owner_id) === String(o.id)).length;
+    const garmentCount = allGarments.filter(g => 
+      String(g.owner_id) === String(o.id) && g.status !== 'devuelta'
+    ).length;
     const balance = Number(o.balance || 0).toFixed(2);
     tbody.innerHTML += `
       <tr>
@@ -660,6 +663,7 @@ async function returnGarment(id) {
 
   showToast('Prenda devuelta correctamente', 'success');
   await loadGarments();
+  await loadOwners();
 }
 
 async function deleteGarment(id) {
@@ -668,6 +672,7 @@ async function deleteGarment(id) {
   if (error) { showToast('Error al eliminar: ' + error.message, 'error'); return; }
   showToast('Prenda eliminada', 'success');
   loadGarments();
+  loadOwners();
 }
 
 // ═══════════════════════════════════════════════════════════════
