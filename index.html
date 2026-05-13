@@ -98,6 +98,7 @@ tr:hover{background:#f8fafc;}
 .results-count{color:var(--muted);font-size:13px;font-weight:600;margin-bottom:12px;}
 </style>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -261,9 +262,9 @@ let currentUser = null;
 const COMISION_FERIA = 0.40;
 const COMISION_DUENO = 0.60;
 
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 // TOAST NOTIFICATIONS
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -281,30 +282,86 @@ function showToast(message, type = 'success') {
   }, 3000);
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 // LOGIN
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 async function checkSession() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) {
-    currentUser = session.user;
-    showApp();
+  try {
+    console.log('🔍 Verificando sesión existente...');
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+    if (error) {
+      console.log('❌ Error al verificar sesión:', error.message);
+      return;
+    }
+
+    if (session) {
+      console.log('✅ Sesión activa encontrada:', session.user.email);
+      currentUser = session.user;
+      showApp();
+    } else {
+      console.log('ℹ️ No hay sesión activa');
+    }
+  } catch (err) {
+    console.error('💥 Error en checkSession:', err);
   }
 }
 
 async function login() {
-  const email = document.getElementById('loginEmail').value;
+  const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    document.getElementById('loginError').style.display = 'block';
+  if (!email || !password) {
+    showToast('Completá email y contraseña', 'error');
     return;
   }
 
-  currentUser = data.user;
-  showApp();
+  console.log('🔑 Intentando login con:', email);
+
+  // FIX: Promise.race con timeout de 8 segundos (bug supabase-js v2)
+  const loginPromise = supabaseClient.auth.signInWithPassword({ email, password });
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+  );
+
+  try {
+    const result = await Promise.race([loginPromise, timeoutPromise]);
+
+    if (result.error) {
+      console.log('❌ Error de login:', result.error.message);
+      document.getElementById('loginError').textContent = result.error.message;
+      document.getElementById('loginError').style.display = 'block';
+      showToast('Email o contraseña incorrectos', 'error');
+      return;
+    }
+
+    console.log('✅ Login exitoso, usuario:', result.data.user.email);
+    currentUser = result.data.user;
+    showApp();
+    showToast('¡Bienvenido!', 'success');
+
+  } catch (err) {
+    if (err.message === 'TIMEOUT') {
+      console.log('⏱️ Timeout detectado - verificando sesión...');
+
+      const { data: { session } } = await supabaseClient.auth.getSession();
+
+      if (session) {
+        console.log('✅ Sesión existe a pesar del timeout! Bug de supabase-js detectado.');
+        currentUser = session.user;
+        showApp();
+        showToast('¡Bienvenido! (sesión recuperada)', 'success');
+      } else {
+        console.log('❌ No hay sesión después del timeout');
+        document.getElementById('loginError').textContent = 'Error de conexión. Intentá de nuevo.';
+        document.getElementById('loginError').style.display = 'block';
+        showToast('Error de conexión con el servidor', 'error');
+      }
+    } else {
+      console.error('💥 Error inesperado:', err);
+      showToast('Error inesperado: ' + err.message, 'error');
+    }
+  }
 }
 
 function showApp() {
@@ -328,9 +385,9 @@ async function logout() {
 // Verificar sesión al cargar
 checkSession();
 
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 // FUNCIONES AUXILIARES
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 function findGarment(id) {
   return allGarments.find(g => String(g.id) === String(id));
 }
@@ -417,9 +474,9 @@ async function loadGarments() {
   updateStats();
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 // SEGURIDAD: user_id agregado en inserts + TOASTS
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 async function addOwner() {
   const name = document.getElementById('ownerName').value.trim();
   const phone = document.getElementById('ownerPhone').value.trim();
@@ -535,10 +592,7 @@ async function sellGarment(id) {
   const ownerProfit = garment.price * COMISION_DUENO;
   const fairProfit = garment.price * COMISION_FERIA;
 
-  if (!confirm('¿Marcar como vendida?
-
-Dueño: $' + ownerProfit.toFixed(2) + '
-Feria: $' + fairProfit.toFixed(2))) return;
+  if (!confirm('¿Marcar como vendida?\n\nDueño: $' + ownerProfit.toFixed(2) + '\nFeria: $' + fairProfit.toFixed(2))) return;
 
   const { error: err1 } = await supabaseClient.from('garments').update({ 
     status: 'vendida',
@@ -610,9 +664,9 @@ async function deleteGarment(id) {
   loadOwners();
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 // FILTROS DE STOCK
-// ═══════════════════════════════════════════════════════════════
+// ===============================================================
 function clearFilters() {
   document.getElementById('searchInput').value = '';
   document.getElementById('categoryFilter').value = '';
@@ -779,5 +833,3 @@ function updateStats() {
   document.getElementById('ownersProfit').textContent = ownersProfit.toFixed(2);
 }
 </script>
-</body>
-</html>
