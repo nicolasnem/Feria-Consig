@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
@@ -119,7 +119,50 @@ tr:hover{background:#f8fafc;}
   from { opacity: 1; transform: translateX(0); }
   to { opacity: 0; transform: translateX(100%); }
 }
+
+/* FILTROS DE STOCK */
+.filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  margin-bottom: 18px;
+  align-items: end;
+}
+
+.filter-row input {
+  width: 100%;
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #e0e7ff;
+  color: #4338ca;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.filter-badge:hover {
+  background: #c7d2fe;
+}
+
+.filter-badge i {
+  font-size: 10px;
+}
+
+.results-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
 </style>
+<base target="_blank">
 </head>
 <body>
 
@@ -199,7 +242,7 @@ tr:hover{background:#f8fafc;}
 <div class="grid">
 <select id="ownerSelect"><option value="">Seleccionar dueño...</option></select>
 <input type="text" id="description" placeholder="Descripción">
-<input type="text" id="category" placeholder="Categoría">
+<input type="text" id="category" placeholder="Categoría (ej: Remeras, Pantalones)">
 <input type="text" id="size" placeholder="Talle">
 <input type="text" id="color" placeholder="Color">
 <input type="number" id="price" placeholder="Precio" step="0.01">
@@ -209,10 +252,22 @@ tr:hover{background:#f8fafc;}
 
 <div class="section">
 <div class="section-header"><h2>Stock</h2></div>
-<input class="search" type="text" id="searchInput" placeholder="Buscar prenda..." onkeyup="renderGarments()">
+
+<!-- FILTROS -->
+<div class="filter-row">
+<input type="text" id="searchInput" placeholder="Buscar por nombre, código o dueño..." onkeyup="renderGarments()">
+<input type="text" id="categoryFilter" placeholder="Buscar por categoría (ej: Remeras)..." onkeyup="renderGarments()">
+<button class="primary-btn" onclick="clearFilters()" style="padding:14px 20px;">
+  <i class="fa-solid fa-rotate-left"></i> Limpiar
+</button>
+</div>
+
+<div id="activeFilters"></div>
+<div class="results-count" id="resultsCount"></div>
+
 <div class="table-container">
 <table>
-<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead>
+<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead>
 <tbody id="garmentsTable"></tbody>
 </table>
 </div>
@@ -278,14 +333,14 @@ function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  
+
   const icon = type === 'success' ? '<i class="fa-solid fa-check-circle"></i>' :
                type === 'error' ? '<i class="fa-solid fa-circle-xmark"></i>' :
                '<i class="fa-solid fa-triangle-exclamation"></i>';
-  
+
   toast.innerHTML = `${icon} <span>${message}</span>`;
   container.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.remove();
   }, 3000);
@@ -305,14 +360,14 @@ async function checkSession() {
 async function login() {
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
-  
+
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  
+
   if (error) {
     document.getElementById('loginError').style.display = 'block';
     return;
   }
-  
+
   currentUser = data.user;
   showApp();
 }
@@ -367,9 +422,9 @@ function showSection(section, element) {
   document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
   document.getElementById(section + 'Section').classList.add('active');
-  
+
   element.classList.add('active');
-  
+
   const titles = {
     dashboard: ['Dashboard', 'Gestiona tu feria de consignación moderna'],
     owners: ['Dueños', 'Administrá los dueños de las prendas'],
@@ -396,13 +451,13 @@ async function loadGarments() {
     .from('garments')
     .select('*, owners(name)')
     .order('created_at', { ascending: false });
-  
+
   if (error) { console.error(error); return; }
-  
+
   allGarments = (data || []).filter(g => g && g.id != null);
-  
+
   const garmentsWithoutCode = allGarments.filter(g => !g.code);
-  
+
   if (garmentsWithoutCode.length > 0) {
     const maxNum = allGarments.reduce((max, g) => {
       if (g.code && g.code.startsWith('PR')) {
@@ -411,7 +466,7 @@ async function loadGarments() {
       }
       return max;
     }, 0);
-    
+
     let nextNum = maxNum;
     const updatePromises = garmentsWithoutCode.map(g => {
       nextNum++;
@@ -419,10 +474,10 @@ async function loadGarments() {
       g.code = newCode;
       return supabaseClient.from('garments').update({ code: newCode }).eq('id', g.id);
     });
-    
+
     await Promise.all(updatePromises);
   }
-  
+
   renderGarments();
   updateStats();
 }
@@ -435,20 +490,20 @@ async function addOwner() {
   const phone = document.getElementById('ownerPhone').value.trim();
   const email = document.getElementById('ownerEmail').value.trim();
   if (!name) { showToast('El nombre es obligatorio', 'error'); return; }
-  
+
   const user_id = currentUser?.id;
   if (!user_id) { showToast('Debes estar logueado', 'error'); return; }
-  
+
   const { error } = await supabaseClient.from('owners').insert([{ 
     name, phone, email, balance: 0, total_sold: 0,
     user_id
   }]);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  
+
   document.getElementById('ownerName').value = '';
   document.getElementById('ownerPhone').value = '';
   document.getElementById('ownerEmail').value = '';
-  
+
   showToast('Dueño agregado correctamente', 'success');
   loadOwners();
   loadGarments();
@@ -499,29 +554,29 @@ async function addGarment() {
   const size = document.getElementById('size').value.trim();
   const color = document.getElementById('color').value.trim();
   const price = parseFloat(document.getElementById('price').value);
-  
+
   if (!owner_id) { showToast('Seleccioná un dueño', 'error'); return; }
   if (!description) { showToast('La descripción es obligatoria', 'error'); return; }
   if (isNaN(price) || price <= 0) { showToast('El precio debe ser mayor a 0', 'error'); return; }
-  
+
   const user_id = currentUser?.id;
   if (!user_id) { showToast('Debes estar logueado', 'error'); return; }
-  
+
   const code = generateNextCode();
-  
+
   const { error } = await supabaseClient.from('garments').insert([{
     owner_id, description, category, size, color, price, code, status: 'disponible',
     user_id
   }]);
-  
+
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  
+
   document.getElementById('description').value = '';
   document.getElementById('category').value = '';
   document.getElementById('size').value = '';
   document.getElementById('color').value = '';
   document.getElementById('price').value = '';
-  
+
   showToast('Prenda agregada correctamente', 'success');
   loadGarments();
 }
@@ -535,23 +590,26 @@ async function sellGarment(id) {
     if (!retry) { showToast('Prenda no existe', 'error'); return; }
     return sellGarment(id);
   }
-  
+
   if (garment.status === 'vendida') { showToast('Esta prenda ya fue vendida', 'warning'); return; }
   if (garment.status === 'devuelta') { showToast('No se puede vender una prenda devuelta', 'error'); return; }
-  
+
   const ownerProfit = garment.price * COMISION_DUENO;
   const fairProfit = garment.price * COMISION_FERIA;
-  
-  if (!confirm('¿Marcar como vendida?\n\nDueño: $' + ownerProfit.toFixed(2) + '\nFeria: $' + fairProfit.toFixed(2))) return;
-  
+
+  if (!confirm('¿Marcar como vendida?
+
+Dueño: $' + ownerProfit.toFixed(2) + '
+Feria: $' + fairProfit.toFixed(2))) return;
+
   const { error: err1 } = await supabaseClient.from('garments').update({ 
     status: 'vendida',
     owner_profit: ownerProfit,
     fair_profit: fairProfit
   }).eq('id', id);
-  
+
   if (err1) { showToast('Error al vender: ' + err1.message, 'error'); return; }
-  
+
   await supabaseClient.from('sales').insert([{
     garment_id: id,
     owner_id: garment.owner_id,
@@ -560,7 +618,7 @@ async function sellGarment(id) {
     fair_profit: fairProfit,
     user_id: currentUser?.id
   }]);
-  
+
   const owner = allOwners.find(o => String(o.id) === String(garment.owner_id));
   if (owner) {
     const newBalance = Number(owner.balance || 0) + ownerProfit;
@@ -570,7 +628,7 @@ async function sellGarment(id) {
       total_sold: newTotalSold 
     }).eq('id', garment.owner_id);
   }
-  
+
   showToast('Prenda vendida correctamente', 'success');
   await loadGarments();
   await loadOwners();
@@ -585,21 +643,21 @@ async function returnGarment(id) {
     if (!retry) { showToast('Prenda no existe', 'error'); return; }
     return returnGarment(id);
   }
-  
+
   if (garment.status === 'devuelta') { showToast('Esta prenda ya fue devuelta', 'warning'); return; }
-  
+
   if (!confirm('¿Marcar como devuelta al dueño?')) return;
-  
+
   const { error: err1 } = await supabaseClient.from('garments').update({ status: 'devuelta' }).eq('id', id);
   if (err1) { showToast('Error al devolver: ' + err1.message, 'error'); return; }
-  
+
   await supabaseClient.from('returns').insert([{
     garment_id: id,
     owner_id: garment.owner_id,
     reason: 'Devolución',
     user_id: currentUser?.id
   }]);
-  
+
   showToast('Prenda devuelta correctamente', 'success');
   await loadGarments();
 }
@@ -612,28 +670,73 @@ async function deleteGarment(id) {
   loadGarments();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// FILTROS DE STOCK
+// ═══════════════════════════════════════════════════════════════
+function clearFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('categoryFilter').value = '';
+  renderGarments();
+  showToast('Filtros limpiados', 'success');
+}
+
 function renderGarments() {
-  const search = document.getElementById('searchInput').value.toLowerCase();
+  const search = document.getElementById('searchInput').value.toLowerCase().trim();
+  const categoryFilter = document.getElementById('categoryFilter').value.toLowerCase().trim();
   const tbody = document.getElementById('garmentsTable');
+  const activeFiltersDiv = document.getElementById('activeFilters');
+  const resultsCountDiv = document.getElementById('resultsCount');
+
   tbody.innerHTML = '';
-  
-  const filtered = allGarments.filter(g => 
-    (g.description && g.description.toLowerCase().includes(search)) ||
-    (g.code && g.code.toLowerCase().includes(search)) ||
-    (g.owners?.name || '').toLowerCase().includes(search)
-  );
-  
+
+  // Mostrar filtros activos
+  let activeFiltersHTML = '';
+  if (search) {
+    activeFiltersHTML += `<span class="filter-badge" onclick="document.getElementById('searchInput').value='';renderGarments();">
+      <i class="fa-solid fa-xmark"></i> Búsqueda: "${search}"
+    </span>`;
+  }
+  if (categoryFilter) {
+    activeFiltersHTML += `<span class="filter-badge" onclick="document.getElementById('categoryFilter').value='';renderGarments();">
+      <i class="fa-solid fa-xmark"></i> Categoría: "${categoryFilter}"
+    </span>`;
+  }
+  activeFiltersDiv.innerHTML = activeFiltersHTML;
+
+  // Filtrar prendas
+  const filtered = allGarments.filter(g => {
+    // Filtro por nombre/código/dueño
+    const matchesSearch = !search || 
+      (g.description && g.description.toLowerCase().includes(search)) ||
+      (g.code && g.code.toLowerCase().includes(search)) ||
+      (g.owners?.name || '').toLowerCase().includes(search) ||
+      (g.category && g.category.toLowerCase().includes(search));
+
+    // Filtro por categoría específica
+    const matchesCategory = !categoryFilter ||
+      (g.category && g.category.toLowerCase().includes(categoryFilter));
+
+    return matchesSearch && matchesCategory;
+  });
+
+  // Mostrar conteo de resultados
+  resultsCountDiv.textContent = filtered.length === 0 
+    ? 'No se encontraron prendas' 
+    : `Mostrando ${filtered.length} de ${allGarments.length} prendas`;
+
   filtered.forEach(g => {
     const ownerName = g.owners?.name || 'Sin dueño';
     const statusClass = g.status || 'disponible';
     const statusText = statusClass === 'devuelta' ? 'Devuelto' : statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
     const displayCode = getDisplayCode(g);
-    
+    const categoryText = g.category || '-';
+
     tbody.innerHTML += `
       <tr>
         <td><strong>${displayCode}</strong></td>
         <td>${ownerName}</td>
         <td>${g.description || '-'}</td>
+        <td>${categoryText}</td>
         <td>$${(g.price || 0).toFixed(2)}</td>
         <td><span class="badge ${statusClass}">${statusText}</span></td>
         <td>
@@ -703,12 +806,12 @@ async function loadReturns() {
     .select('*, owners(name)')
     .eq('status', 'devuelta')
     .order('created_at', { ascending: false });
-  
+
   if (error) { console.error(error); return; }
-  
+
   const tbody = document.getElementById('returnsTable');
   tbody.innerHTML = '';
-  
+
   (data || []).forEach(g => {
     tbody.innerHTML += `
       <tr>
@@ -724,14 +827,14 @@ async function loadReturns() {
 function updateStats() {
   document.getElementById('totalOwners').textContent = allOwners.length;
   document.getElementById('totalGarments').textContent = allGarments.length;
-  
+
   const sold = allGarments.filter(g => g.status === 'vendida');
   document.getElementById('soldGarments').textContent = sold.length;
-  
+
   const totalSales = sold.reduce((sum, g) => sum + (g.price || 0), 0);
   const fairProfit = totalSales * COMISION_FERIA;
   const ownersProfit = totalSales * COMISION_DUENO;
-  
+
   document.getElementById('fairProfit').textContent = fairProfit.toFixed(2);
   document.getElementById('ownersProfit').textContent = ownersProfit.toFixed(2);
 }
