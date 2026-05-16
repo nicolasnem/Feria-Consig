@@ -129,6 +129,7 @@ tr:hover{background:#f8fafc;}
 <div class="menu">
 <div class="menu-item active" onclick="showSection('dashboard', this)"><i class="fa-solid fa-chart-line"></i> Dashboard</div>
 <div class="menu-item" onclick="showSection('owners', this)"><i class="fa-solid fa-users"></i> Dueños</div>
+<div class="menu-item" onclick="showSection('sales', this)"><i class="fa-solid fa-sack-dollar"></i> Vendidas</div>
 <div class="menu-item" onclick="showSection('returns', this)"><i class="fa-solid fa-box-open"></i> Devoluciones</div>
 </div>
 </div>
@@ -217,6 +218,18 @@ tr:hover{background:#f8fafc;}
 <table>
 <thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Acciones</th></tr></thead>
 <tbody id="ownersTable"></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div id="salesSection" class="section-content">
+<div class="section">
+<div class="section-header"><h2>Prendas Vendidas</h2></div>
+<div class="table-container">
+<table>
+<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Ganancia Dueño (60%)</th><th>Ganancia Feria (40%)</th><th>Fecha</th></tr></thead>
+<tbody id="salesTable"></tbody>
 </table>
 </div>
 </div>
@@ -420,11 +433,13 @@ function showSection(section, element) {
   const titles = {
     dashboard: ['Dashboard', 'Gestiona tu feria de consignación moderna'],
     owners: ['Dueños', 'Administrá los dueños de las prendas'],
+    sales: ['Vendidas', 'Todas las prendas vendidas en la feria'],
     returns: ['Devoluciones', 'Prendas devueltas a sus dueños']
   };
   document.getElementById('pageTitle').textContent = titles[section][0];
   document.getElementById('pageSubtitle').textContent = titles[section][1];
   if (section === 'owners') loadOwners();
+  if (section === 'sales') loadSales();
   if (section === 'returns') loadReturns();
 }
 
@@ -839,6 +854,36 @@ async function loadReturns() {
         <td>${g.owners?.name || 'Sin dueño'}</td>
         <td>${g.description || '-'}</td>
         <td>$${(g.price || 0).toFixed(2)}</td>
+        <td>${g.created_at ? new Date(g.created_at).toLocaleDateString('es-AR') : '-'}</td>
+      </tr>`;
+  });
+}
+
+async function loadSales() {
+  const { data, error } = await supabaseClient
+    .from('garments')
+    .select('*, owners(name)')
+    .eq('status', 'vendida')
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error(error); return; }
+
+  const tbody = document.getElementById('salesTable');
+  tbody.innerHTML = '';
+
+  (data || []).forEach(g => {
+    const ownerProfit = g.owner_profit || (g.price * COMISION_DUENO);
+    const fairProfit = g.fair_profit || (g.price * COMISION_FERIA);
+
+    tbody.innerHTML += `
+      <tr>
+        <td><strong>${getDisplayCode(g)}</strong></td>
+        <td>${g.owners?.name || 'Sin dueño'}</td>
+        <td>${g.description || '-'}</td>
+        <td>${g.category || '-'}</td>
+        <td>$${(g.price || 0).toFixed(2)}</td>
+        <td>$${ownerProfit.toFixed(2)}</td>
+        <td>$${fairProfit.toFixed(2)}</td>
         <td>${g.created_at ? new Date(g.created_at).toLocaleDateString('es-AR') : '-'}</td>
       </tr>`;
   });
