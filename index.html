@@ -704,10 +704,17 @@ async function sellGarment(id) {
   if (owner) {
     const newBalance = Number(owner.balance || 0) + ownerProfit;
     const newTotalSold = Number(owner.total_sold || 0) + garment.price;
-    await supabaseClient.from('owners').update({ 
+
+    // Si el dueño estaba abonado, resetear a no abonado porque tiene nuevo saldo pendiente
+    const updates = { 
       balance: newBalance, 
       total_sold: newTotalSold 
-    }).eq('id', garment.owner_id);
+    };
+    if (owner.paid === true) {
+      updates.paid = false;
+    }
+
+    await supabaseClient.from('owners').update(updates).eq('id', garment.owner_id);
   }
 
   showToast('Prenda vendida correctamente', 'success');
