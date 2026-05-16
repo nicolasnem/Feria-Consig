@@ -98,6 +98,7 @@ tr:hover{background:#f8fafc;}
 .results-count{color:var(--muted);font-size:13px;font-weight:600;margin-bottom:12px;}
 </style>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -214,7 +215,7 @@ tr:hover{background:#f8fafc;}
 <div class="section-header"><h2>Lista de Dueños</h2></div>
 <div class="table-container">
 <table>
-<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas</th><th>Balance</th><th>Acciones</th></tr></thead>
+<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Acciones</th></tr></thead>
 <tbody id="ownersTable"></tbody>
 </table>
 </div>
@@ -520,14 +521,25 @@ function renderOwnerSelect() {
 function renderOwnersTable() {
   const tbody = document.getElementById('ownersTable');
   tbody.innerHTML = '';
+
+  // Calcular total de prendas vendidas en todo el sistema (para el %)
+  const totalSoldGlobal = allGarments.filter(g => g.status === 'vendida').length;
+
   allOwners.forEach(o => {
-    // FIX: Contar solo prendas que no están devueltas
-    const garmentCount = allGarments.filter(g => 
+    // Prendas en stock (no devueltas)
+    const garmentCount = allGarments.filter(g =>
       String(g.owner_id) === String(o.id) && g.status !== 'devuelta'
     ).length;
 
-    // Debug: mostrar en consola para verificar
-    console.log(`Dueño ${o.name}: ${garmentCount} prendas (filtradas de ${allGarments.filter(g => String(g.owner_id) === String(o.id)).length} total)`);
+    // PRENDAS VENDIDAS de este dueño
+    const soldCount = allGarments.filter(g =>
+      String(g.owner_id) === String(o.id) && g.status === 'vendida'
+    ).length;
+
+    // Porcentaje sobre el total vendido
+    const percent = totalSoldGlobal > 0
+      ? ((soldCount / totalSoldGlobal) * 100).toFixed(1)
+      : '0.0';
 
     const balance = Number(o.balance || 0).toFixed(2);
     tbody.innerHTML += `
@@ -536,6 +548,7 @@ function renderOwnersTable() {
         <td>${o.phone || '-'}</td>
         <td>${o.email || '-'}</td>
         <td>${garmentCount}</td>
+        <td><strong>${soldCount}</strong></td>
         <td>$${balance}</td>
         <td>
           <button class="small-btn delete-btn" onclick="deleteOwner('${o.id}')">
