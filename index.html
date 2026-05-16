@@ -216,7 +216,7 @@ tr:hover{background:#f8fafc;}
 <div class="section-header"><h2>Lista de Dueños</h2></div>
 <div class="table-container">
 <table>
-<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Acciones</th></tr></thead>
+<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Abonado</th><th>Acciones</th></tr></thead>
 <tbody id="ownersTable"></tbody>
 </table>
 </div>
@@ -516,6 +516,26 @@ async function addOwner() {
   loadGarments();
 }
 
+async function payOwner(id) {
+  const owner = allOwners.find(o => String(o.id) === String(id));
+  if (!owner) { showToast('Dueño no encontrado', 'error'); return; }
+
+  const balance = Number(owner.balance || 0);
+  if (balance <= 0) { showToast('El balance ya está en cero', 'warning'); return; }
+
+  if (!confirm(`¿Abonar $${balance.toFixed(2)} a ${owner.name}?\n\nEl balance volverá a cero y se marcará como abonado.`)) return;
+
+  const { error } = await supabaseClient.from('owners').update({
+    balance: 0,
+    paid: true
+  }).eq('id', id);
+
+  if (error) { showToast('Error al abonar: ' + error.message, 'error'); return; }
+
+  showToast(`$${balance.toFixed(2)} abonado a ${owner.name}`, 'success');
+  loadOwners();
+}
+
 async function deleteOwner(id) {
   if (!confirm('¿Eliminar este dueño? Se borrarán todas sus prendas.')) return;
   await supabaseClient.from('owners').delete().eq('id', id);
@@ -537,9 +557,6 @@ function renderOwnersTable() {
   const tbody = document.getElementById('ownersTable');
   tbody.innerHTML = '';
 
-  // Calcular total de prendas vendidas en todo el sistema (para el %)
-  const totalSoldGlobal = allGarments.filter(g => g.status === 'vendida').length;
-
   allOwners.forEach(o => {
     // Prendas en stock (no devueltas)
     const garmentCount = allGarments.filter(g =>
@@ -551,12 +568,18 @@ function renderOwnersTable() {
       String(g.owner_id) === String(o.id) && g.status === 'vendida'
     ).length;
 
-    // Porcentaje sobre el total vendido
-    const percent = totalSoldGlobal > 0
-      ? ((soldCount / totalSoldGlobal) * 100).toFixed(1)
-      : '0.0';
-
     const balance = Number(o.balance || 0).toFixed(2);
+    const isPaid = o.paid === true;
+    const paidBadge = isPaid
+      ? '<span class="badge disponible"><i class="fa-solid fa-check"></i> Sí</span>'
+      : '<span class="badge vendida"><i class="fa-solid fa-xmark"></i> No</span>';
+
+    const abonarBtn = (parseFloat(balance) > 0 && !isPaid)
+      ? `<button class="small-btn sell-btn" onclick="payOwner('${o.id}')">
+           <i class="fa-solid fa-money-bill-wave"></i> Abonar
+         </button>`
+      : '';
+
     tbody.innerHTML += `
       <tr>
         <td>${o.name}</td>
@@ -565,10 +588,14 @@ function renderOwnersTable() {
         <td>${garmentCount}</td>
         <td><strong>${soldCount}</strong></td>
         <td>$${balance}</td>
+        <td>${paidBadge}</td>
         <td>
-          <button class="small-btn delete-btn" onclick="deleteOwner('${o.id}')">
-            <i class="fa-solid fa-trash"></i> Eliminar
-          </button>
+          <div class="actions">
+            ${abonarBtn}
+            <button class="small-btn delete-btn" onclick="deleteOwner('${o.id}')">
+              <i class="fa-solid fa-trash"></i> Eliminar
+            </button>
+          </div>
         </td>
       </tr>`;
   });
