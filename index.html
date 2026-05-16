@@ -170,6 +170,7 @@ tr:hover{background:#f8fafc;}
 <input type="text" id="ownerName" placeholder="Nombre">
 <input type="text" id="ownerPhone" placeholder="Teléfono">
 <input type="email" id="ownerEmail" placeholder="Email">
+<input type="text" id="ownerAlias" placeholder="Alias/CBU para transferir">
 <button class="primary-btn" onclick="addOwner()"><i class="fa-solid fa-plus"></i> Agregar Dueño</button>
 </div>
 </div>
@@ -216,7 +217,7 @@ tr:hover{background:#f8fafc;}
 <div class="section-header"><h2>Lista de Dueños</h2></div>
 <div class="table-container">
 <table>
-<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Abonado</th><th>Acciones</th></tr></thead>
+<thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Alias/CBU</th><th>Prendas en stock</th><th>Vendidas</th><th>Balance</th><th>Abonado</th><th>Acciones</th></tr></thead>
 <tbody id="ownersTable"></tbody>
 </table>
 </div>
@@ -496,13 +497,14 @@ async function addOwner() {
   const name = document.getElementById('ownerName').value.trim();
   const phone = document.getElementById('ownerPhone').value.trim();
   const email = document.getElementById('ownerEmail').value.trim();
+  const alias_cbu = document.getElementById('ownerAlias').value.trim();
   if (!name) { showToast('El nombre es obligatorio', 'error'); return; }
 
   const user_id = currentUser?.id;
   if (!user_id) { showToast('Debes estar logueado', 'error'); return; }
 
   const { error } = await supabaseClient.from('owners').insert([{ 
-    name, phone, email, balance: 0, total_sold: 0,
+    name, phone, email, alias_cbu, balance: 0, total_sold: 0,
     user_id
   }]);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
@@ -510,10 +512,34 @@ async function addOwner() {
   document.getElementById('ownerName').value = '';
   document.getElementById('ownerPhone').value = '';
   document.getElementById('ownerEmail').value = '';
+  document.getElementById('ownerAlias').value = '';
 
   showToast('Dueño agregado correctamente', 'success');
   loadOwners();
   loadGarments();
+}
+
+async function editOwner(id) {
+  const owner = allOwners.find(o => String(o.id) === String(id));
+  if (!owner) { showToast('Dueño no encontrado', 'error'); return; }
+
+  const newPhone = prompt(`Editar datos de ${owner.name}\n\nTeléfono actual: ${owner.phone || 'Sin teléfono'}\nIngresá el nuevo teléfono (o dejá vacío para no cambiar):`, owner.phone || '');
+  if (newPhone === null) return;
+
+  const newAlias = prompt(`Alias/CBU actual: ${owner.alias_cbu || 'Sin alias'}\nIngresá el nuevo Alias/CBU (o dejá vacío para no cambiar):`, owner.alias_cbu || '');
+  if (newAlias === null) return;
+
+  const updates = {};
+  if (newPhone.trim() !== '') updates.phone = newPhone.trim();
+  if (newAlias.trim() !== '') updates.alias_cbu = newAlias.trim();
+
+  if (Object.keys(updates).length === 0) { showToast('No se realizaron cambios', 'warning'); return; }
+
+  const { error } = await supabaseClient.from('owners').update(updates).eq('id', id);
+  if (error) { showToast('Error al editar: ' + error.message, 'error'); return; }
+
+  showToast('Datos del dueño actualizados', 'success');
+  loadOwners();
 }
 
 async function payOwner(id) {
@@ -585,12 +611,16 @@ function renderOwnersTable() {
         <td>${o.name}</td>
         <td>${o.phone || '-'}</td>
         <td>${o.email || '-'}</td>
+        <td>${o.alias_cbu || '-'}</td>
         <td>${garmentCount}</td>
         <td><strong>${soldCount}</strong></td>
         <td>$${balance}</td>
         <td>${paidBadge}</td>
         <td>
           <div class="actions">
+            <button class="small-btn action-btn" style="background:#e0e7ff;color:#4338ca;" onclick="editOwner('${o.id}')">
+              <i class="fa-solid fa-pen"></i> Editar
+            </button>
             ${abonarBtn}
             <button class="small-btn delete-btn" onclick="deleteOwner('${o.id}')">
               <i class="fa-solid fa-trash"></i> Eliminar
