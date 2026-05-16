@@ -723,6 +723,30 @@ async function returnGarment(id) {
   renderOwnersTable();
 }
 
+async function editGarmentPrice(id) {
+  const garment = findGarment(id);
+  if (!garment) { showToast('Prenda no encontrada', 'error'); return; }
+
+  const newPrice = prompt(
+    `Editar precio de "${garment.description || 'Sin descripción'}" (código: ${getDisplayCode(garment)})\n\nPrecio actual: $${(garment.price || 0).toFixed(2)}\n\nIngresá el nuevo precio:`,
+    garment.price || ''
+  );
+
+  if (newPrice === null) return; // Canceló
+
+  const price = parseFloat(newPrice);
+  if (isNaN(price) || price <= 0) {
+    showToast('El precio debe ser mayor a 0', 'error');
+    return;
+  }
+
+  const { error } = await supabaseClient.from('garments').update({ price: price }).eq('id', id);
+  if (error) { showToast('Error al editar: ' + error.message, 'error'); return; }
+
+  showToast(`Precio actualizado a $${price.toFixed(2)}`, 'success');
+  loadGarments();
+}
+
 async function deleteGarment(id) {
   if (!confirm('¿Eliminar esta prenda?')) return;
   const { error } = await supabaseClient.from('garments').delete().eq('id', id);
@@ -809,6 +833,9 @@ function renderGarments() {
             <button class="small-btn return-btn action-btn" data-id="${g.id}" data-action="return">
               <i class="fa-solid fa-rotate-left"></i> Devolver
             </button>
+            <button class="small-btn action-btn" style="background:#e0e7ff;color:#4338ca;" data-id="${g.id}" data-action="edit">
+              <i class="fa-solid fa-pen"></i> Editar
+            </button>
             <button class="small-btn delete-btn action-btn" data-id="${g.id}" data-action="delete">
               <i class="fa-solid fa-trash"></i> Eliminar
             </button>
@@ -825,6 +852,7 @@ document.getElementById('garmentsTable').addEventListener('click', function(e) {
   const action = btn.dataset.action;
   if (action === 'sell') sellGarment(id);
   else if (action === 'return') returnGarment(id);
+  else if (action === 'edit') editGarmentPrice(id);
   else if (action === 'delete') deleteGarment(id);
 });
 
