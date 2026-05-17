@@ -98,6 +98,7 @@ tr:hover{background:#f8fafc;}
 .results-count{color:var(--muted);font-size:13px;font-weight:600;margin-bottom:12px;}
 </style>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -228,7 +229,7 @@ tr:hover{background:#f8fafc;}
 <div class="section-header"><h2>Prendas Vendidas</h2></div>
 <div class="table-container">
 <table>
-<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Ganancia Dueño (60%)</th><th>Ganancia Feria (40%)</th><th>Fecha</th></tr></thead>
+<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Ganancia Dueño (60%)</th><th>Ganancia Feria (40%)</th><th>Fecha</th><th>Acciones</th></tr></thead>
 <tbody id="salesTable"></tbody>
 </table>
 </div>
@@ -685,7 +686,8 @@ async function sellGarment(id) {
   const { error: err1 } = await supabaseClient.from('garments').update({ 
     status: 'vendida',
     owner_profit: ownerProfit,
-    fair_profit: fairProfit
+    fair_profit: fairProfit,
+    sold_at: new Date().toISOString()
   }).eq('id', id);
 
   if (err1) { showToast('Error al vender: ' + err1.message, 'error'); return; }
@@ -721,6 +723,65 @@ async function sellGarment(id) {
   await loadOwners();
 }
 
+// ===============================================================
+// CANCELAR VENTA (nueva función)
+// ===============================================================
+async function cancelSale(id) {
+  const garment = findGarment(id);
+  if (!garment) {
+    showToast('Prenda no encontrada. Recargando...', 'warning');
+    await loadGarments();
+    const retry = findGarment(id);
+    if (!retry) { showToast('Prenda no existe', 'error'); return; }
+    return cancelSale(id);
+  }
+
+  if (garment.status !== 'vendida') {
+    showToast('Esta prenda no está vendida', 'warning');
+    return;
+  }
+
+  const ownerProfit = garment.owner_profit || (garment.price * COMISION_DUENO);
+
+  if (!confirm(`¿Cancelar la venta de "${garment.description || 'Sin descripción'}"?\n\nSe revertirá:\n- Estado a "disponible"\n- Se restará $${ownerProfit.toFixed(2)} del balance del dueño\n- Se restará $${(garment.price || 0).toFixed(2)} del total vendido del dueño`)) return;
+
+  // 1. Revertir la prenda a disponible
+  const { error: err1 } = await supabaseClient.from('garments').update({
+    status: 'disponible',
+    sold_at: null,
+    owner_profit: null,
+    fair_profit: null
+  }).eq('id', id);
+
+  if (err1) { showToast('Error al cancelar venta: ' + err1.message, 'error'); return; }
+
+  // 2. Revertir el balance y total_sold del dueño
+  const owner = allOwners.find(o => String(o.id) === String(garment.owner_id));
+  if (owner) {
+    const newBalance = Math.max(0, Number(owner.balance || 0) - ownerProfit);
+    const newTotalSold = Math.max(0, Number(owner.total_sold || 0) - (garment.price || 0));
+
+    await supabaseClient.from('owners').update({
+      balance: newBalance,
+      total_sold: newTotalSold,
+      paid: false
+    }).eq('id', garment.owner_id);
+  }
+
+  // 3. Eliminar el registro de la tabla sales
+  await supabaseClient.from('sales').delete().eq('garment_id', id);
+
+  showToast('Venta cancelada. Prenda disponible nuevamente.', 'success');
+  await loadGarments();
+  await loadOwners();
+
+  // Si estamos en la pestaña de Vendidas, recargarla
+  const salesSection = document.getElementById('salesSection');
+  if (salesSection && salesSection.classList.contains('active')) {
+    loadSales();
+  }
+}
+
 async function returnGarment(id) {
   const garment = findGarment(id);
   if (!garment) { 
@@ -735,7 +796,11 @@ async function returnGarment(id) {
 
   if (!confirm('¿Marcar como devuelta al dueño?')) return;
 
-  const { error: err1 } = await supabaseClient.from('garments').update({ status: 'devuelta' }).eq('id', id);
+  const { error: err1 } = await supabaseClient.from('garments').update({ 
+    status: 'devuelta',
+    returned_at: new Date().toISOString()
+  }).eq('id', id);
+
   if (err1) { showToast('Error al devolver: ' + err1.message, 'error'); return; }
 
   await supabaseClient.from('returns').insert([{
@@ -853,6 +918,14 @@ function renderGarments() {
     const displayCode = getDisplayCode(g);
     const categoryText = g.category || '-';
 
+    // Ocultar botón Vender si ya está vendida
+    const isSold = g.status === 'vendida';
+    const sellButton = isSold
+      ? `<span class="badge vendida" style="padding:8px 14px;">Vendida</span>`
+      : `<button class="small-btn sell-btn action-btn" data-id="${g.id}" data-action="sell">
+           <i class="fa-solid fa-check"></i> Vender
+         </button>`;
+
     tbody.innerHTML += `
       <tr>
         <td><strong>${displayCode}</strong></td>
@@ -863,9 +936,7 @@ function renderGarments() {
         <td><span class="badge ${statusClass}">${statusText}</span></td>
         <td>
           <div class="actions">
-            <button class="small-btn sell-btn action-btn" data-id="${g.id}" data-action="sell">
-              <i class="fa-solid fa-check"></i> Vender
-            </button>
+            ${sellButton}
             <button class="small-btn return-btn action-btn" data-id="${g.id}" data-action="return">
               <i class="fa-solid fa-rotate-left"></i> Devolver
             </button>
@@ -931,12 +1002,17 @@ async function loadReturns() {
     .from('garments')
     .select('*, owners(name)')
     .eq('status', 'devuelta')
-    .order('created_at', { ascending: false });
+    .order('returned_at', { ascending: false });
 
   if (error) { console.error(error); return; }
 
   const tbody = document.getElementById('returnsTable');
   tbody.innerHTML = '';
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px;">No hay prendas devueltas</td></tr>';
+    return;
+  }
 
   (data || []).forEach(g => {
     tbody.innerHTML += `
@@ -945,7 +1021,7 @@ async function loadReturns() {
         <td>${g.owners?.name || 'Sin dueño'}</td>
         <td>${g.description || '-'}</td>
         <td>$${(g.price || 0).toFixed(2)}</td>
-        <td>${g.created_at ? new Date(g.created_at).toLocaleDateString('es-AR') : '-'}</td>
+        <td>${g.returned_at ? new Date(g.returned_at).toLocaleDateString('es-AR') : '-'}</td>
       </tr>`;
   });
 }
@@ -955,16 +1031,24 @@ async function loadSales() {
     .from('garments')
     .select('*, owners(name)')
     .eq('status', 'vendida')
-    .order('created_at', { ascending: false });
+    .order('sold_at', { ascending: false });
 
   if (error) { console.error(error); return; }
 
   const tbody = document.getElementById('salesTable');
   tbody.innerHTML = '';
 
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">No hay prendas vendidas</td></tr>';
+    return;
+  }
+
   (data || []).forEach(g => {
     const ownerProfit = g.owner_profit || (g.price * COMISION_DUENO);
     const fairProfit = g.fair_profit || (g.price * COMISION_FERIA);
+    const saleDate = g.sold_at
+      ? new Date(g.sold_at).toLocaleDateString('es-AR')
+      : '-';
 
     tbody.innerHTML += `
       <tr>
@@ -975,7 +1059,14 @@ async function loadSales() {
         <td>$${(g.price || 0).toFixed(2)}</td>
         <td>$${ownerProfit.toFixed(2)}</td>
         <td>$${fairProfit.toFixed(2)}</td>
-        <td>${g.created_at ? new Date(g.created_at).toLocaleDateString('es-AR') : '-'}</td>
+        <td>${saleDate}</td>
+        <td>
+          <div class="actions">
+            <button class="small-btn return-btn" onclick="cancelSale('${g.id}')" title="Cancelar venta y volver a disponible">
+              <i class="fa-solid fa-rotate-left"></i> Cancelar venta
+            </button>
+          </div>
+        </td>
       </tr>`;
   });
 }
