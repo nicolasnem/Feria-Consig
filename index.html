@@ -99,6 +99,7 @@ tr:hover{background:#f8fafc;}
 </style>
 <base target="_blank">
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -229,7 +230,7 @@ tr:hover{background:#f8fafc;}
 <div class="section-header"><h2>Prendas Vendidas</h2></div>
 <div class="table-container">
 <table>
-<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Ganancia Dueño (50%)</th><th>Ganancia Feria (50%)</th><th>Fecha</th><th>Acciones</th></tr></thead>
+<thead><tr><th>Código</th><th>Dueño</th><th>Descripción</th><th>Categoría</th><th>Precio</th><th>Ganancia Dueño</th><th>Ganancia Feria</th><th>Fecha</th><th>Período</th><th>Acciones</th></tr></thead>
 <tbody id="salesTable"></tbody>
 </table>
 </div>
@@ -687,7 +688,8 @@ async function sellGarment(id) {
     status: 'vendida',
     owner_profit: ownerProfit,
     fair_profit: fairProfit,
-    sold_at: new Date().toISOString()
+    sold_at: new Date().toISOString(),
+    period: 'new'
   }).eq('id', id);
 
   if (err1) { showToast('Error al vender: ' + err1.message, 'error'); return; }
@@ -738,6 +740,12 @@ async function cancelSale(id) {
 
   if (garment.status !== 'vendida') {
     showToast('Esta prenda no está vendida', 'warning');
+    return;
+  }
+
+  // No permitir cancelar ventas del periodo anterior
+  if (garment.period === 'old') {
+    showToast('No se puede cancelar una venta histórica', 'warning');
     return;
   }
 
@@ -1039,16 +1047,19 @@ async function loadSales() {
   tbody.innerHTML = '';
 
   if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">No hay prendas vendidas</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">No hay prendas vendidas</td></tr>';
     return;
   }
 
   (data || []).forEach(g => {
-    const ownerProfit = g.owner_profit || (g.price * COMISION_DUENO);
-    const fairProfit = g.fair_profit || (g.price * COMISION_FERIA);
-    const saleDate = g.sold_at
-      ? new Date(g.sold_at).toLocaleDateString('es-AR')
-      : '-';
+    const ownerProfit = g.owner_profit ?? (g.price * COMISION_DUENO);
+    const fairProfit = g.fair_profit ?? (g.price * COMISION_FERIA);
+    const saleDate = g.sold_at ? new Date(g.sold_at).toLocaleDateString('es-AR') : '-';
+
+    const isNewSale = g.period === 'new';
+    const periodBadge = !isNewSale 
+      ? '<span class="badge" style="background:#e5e7eb;color:#6b7280;font-size:11px;">60/40</span>'
+      : '<span class="badge disponible" style="font-size:11px;">50/50</span>';
 
     tbody.innerHTML += `
       <tr>
@@ -1060,11 +1071,14 @@ async function loadSales() {
         <td>$${ownerProfit.toFixed(2)}</td>
         <td>$${fairProfit.toFixed(2)}</td>
         <td>${saleDate}</td>
+        <td>${periodBadge}</td>
         <td>
           <div class="actions">
-            <button class="small-btn return-btn" onclick="cancelSale('${g.id}')" title="Cancelar venta y volver a disponible">
-              <i class="fa-solid fa-rotate-left"></i> Cancelar venta
-            </button>
+            ${isNewSale ? `
+              <button class="small-btn return-btn" onclick="cancelSale('${g.id}')" title="Cancelar venta y volver a disponible">
+                <i class="fa-solid fa-rotate-left"></i> Cancelar venta
+              </button>
+            ` : '<span style="color:#9ca3af;font-size:12px;">Histórico</span>'}
           </div>
         </td>
       </tr>`;
@@ -1075,7 +1089,8 @@ function updateStats() {
   document.getElementById('totalOwners').textContent = allOwners.length;
   document.getElementById('totalGarments').textContent = allGarments.length;
 
-  const sold = allGarments.filter(g => g.status === 'vendida');
+  // Solo contar vendidas del PERIODO NUEVO (50/50)
+  const sold = allGarments.filter(g => g.status === 'vendida' && g.period === 'new');
   document.getElementById('soldGarments').textContent = sold.length;
 
   const totalSales = sold.reduce((sum, g) => sum + (g.price || 0), 0);
