@@ -978,8 +978,8 @@ function downloadExcel() {
     'Color': g.color || '',
     'Precio': g.price || 0,
     'Estado': g.status === 'devuelta' ? 'Devuelto' : (g.status || 'disponible'),
-    'Ganancia Dueño (60%)': g.owner_profit || 0,
-    'Ganancia Feria (40%)': g.fair_profit || 0,
+    'Ganancia Dueño (50%)': g.owner_profit || 0,
+    'Ganancia Feria (50%)': g.fair_profit || 0,
     'Fecha': g.created_at ? new Date(g.created_at).toLocaleDateString('es-AR') : ''
   }));
 
